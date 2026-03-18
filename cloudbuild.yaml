@@ -1,0 +1,35 @@
+steps:
+- name: gcr.io/cloud-builders/docker
+  args:
+  - build
+  - -t
+  - asia-south1-docker.pkg.dev/$PROJECT_ID/turtle-trading-uae/app:$COMMIT_SHA
+  - .
+
+- name: gcr.io/cloud-builders/docker
+  args:
+  - push
+  - asia-south1-docker.pkg.dev/$PROJECT_ID/turtle-trading-uae/app:$COMMIT_SHA
+
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+  entrypoint: gcloud
+  args:
+  - run
+  - deploy
+  - turtle-trading-uae
+  - --image
+  - asia-south1-docker.pkg.dev/$PROJECT_ID/turtle-trading-uae/app:$COMMIT_SHA
+  - --region
+  - asia-south1
+  - --platform
+  - managed
+  - --allow-unauthenticated
+  - --memory
+  - 512Mi
+  - --timeout
+  - "120"
+  - --set-env-vars
+  - PYTHONUNBUFFERED=1
+
+images:
+- asia-south1-docker.pkg.dev/$PROJECT_ID/turtle-trading-uae/app:$COMMIT_SHA
