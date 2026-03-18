@@ -60,14 +60,16 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { irm https://astral.sh
 macOS / Linux:
 
 ```bash
-uv venv .venv
+uv python install 3.11
+uv venv --python 3.11 .venv
 source .venv/bin/activate
 ```
 
 Windows (PowerShell):
 
 ```powershell
-uv venv .venv
+uv python install 3.11
+uv venv --python 3.11 .venv
 .venv\Scripts\Activate.ps1
 ```
 
