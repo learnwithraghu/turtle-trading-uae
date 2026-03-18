@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UAE Turtle Trading Scanner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --ink: #102030;
+      --teal: #0b8f87;
+      --sand: #f4efe6;
+      --olive: #48624a;
+      --brick: #b34c30;
+    }
+    body {
+      background:
+        radial-gradient(circle at 0% 0%, #fffdf7 0%, #f9f3e8 45%, #f3eadb 100%);
+      color: var(--ink);
+      font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+    }
+    .glass {
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(7px);
+      border: 1px solid rgba(16, 32, 48, 0.1);
+    }
+    .spin {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(16, 32, 48, 0.2);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <header class="glass rounded-2xl p-5 shadow-sm">
+      <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">UAE Turtle Trading Scanner</h1>
+          <p class="text-sm text-slate-700">Top 5 buy candidates for DFM and ADX with fee-adjusted GTT targets.</p>
+          <p id="lastUpdated" class="mt-1 text-xs text-slate-600">Last updated: -</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="loadingIndicator" class="hidden items-center gap-2 text-xs text-slate-600">
+            <span class="spin"></span>
+            <span>Loading market data...</span>
+          </div>
+          <button id="refreshBtn" class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-teal-800">Refresh Data</button>
+        </div>
+      </div>
+      <div id="metaRow" class="mt-4 grid gap-2 text-xs text-slate-700 sm:grid-cols-2 lg:grid-cols-4"></div>
+    </header>
+
+    <section id="status" class="mt-4 hidden rounded-xl bg-amber-50 p-3 text-sm text-amber-800"></section>
+
+    <section class="mt-6 grid gap-5 lg:grid-cols-2">
+      <div class="glass rounded-2xl p-4 shadow-sm">
+        <h2 class="text-lg font-semibold">DFM</h2>
+        <p class="mb-3 text-xs text-slate-600">Dubai Financial Market top signals</p>
+        <div id="dfmList" class="space-y-3"></div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 shadow-sm">
+        <h2 class="text-lg font-semibold">ADX</h2>
+        <p class="mb-3 text-xs text-slate-600">Abu Dhabi Securities Exchange top signals</p>
+        <div id="adxList" class="space-y-3"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const refreshBtn = document.getElementById("refreshBtn");
+    const statusBox = document.getElementById("status");
+    const dfmList = document.getElementById("dfmList");
+    const adxList = document.getElementById("adxList");
+    const lastUpdated = document.getElementById("lastUpdated");
+    const metaRow = document.getElementById("metaRow");
+    const loadingIndicator = document.getElementById("loadingIndicator");
+
+    function fmtAED(value) {
+      return new Intl.NumberFormat("en-AE", { style: "currency", currency: "AED", maximumFractionDigits: 2 }).format(value);
+    }
+
+    function fmtNum(value, digits = 2) {
+      return Number(value).toFixed(digits);
+    }
+
+    function badge(signal) {
+      if (signal === "BREAKOUT") {
+        return "bg-emerald-100 text-emerald-800";
+      }
+      if (signal === "PRE-BREAKOUT") {
+        return "bg-yellow-100 text-yellow-800";
+      }
+      return "bg-slate-100 text-slate-700";
+    }
+
+    function showStatus(message, isError = false) {
+      statusBox.classList.remove("hidden");
+      statusBox.className = isError
+        ? "mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-800"
+        : "mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800";
+      statusBox.textContent = message;
+    }
+
+    function hideStatus() {
+      statusBox.classList.add("hidden");
+      statusBox.textContent = "";
+    }
+
+    function renderCards(target, items) {
+      if (!items || items.length === 0) {
+        target.innerHTML = '<div class="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">No valid data available right now.</div>';
+        return;
+      }
+
+      target.innerHTML = items.map((item, idx) => {
+        const g = item.gtt;
+        return `
+          <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="text-sm font-bold">#${idx + 1} ${item.symbol}</div>
+                <div class="text-xs text-slate-600">${item.name}</div>
+              </div>
+              <span class="rounded-full px-2 py-1 text-xs font-semibold ${badge(item.signal_label)}">${item.signal_label}</span>
+            </div>
+
+            <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div><span class="text-slate-500">Current</span><br><span class="font-semibold">${fmtNum(item.close, 3)}</span></div>
+              <div><span class="text-slate-500">20D High (Buy Trigger)</span><br><span class="font-semibold">${fmtNum(item.high_20, 3)}</span></div>
+              <div><span class="text-slate-500">ATR14</span><br><span class="font-semibold">${fmtNum(item.atr14, 3)}</span></div>
+              <div><span class="text-slate-500">Score</span><br><span class="font-semibold">${fmtNum(item.score, 2)}</span></div>
+            </div>
+
+            <div class="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
+              <div class="font-semibold text-slate-800">GTT to Set Tomorrow</div>
+              <div class="mt-2 grid grid-cols-2 gap-2">
+                <div><span class="text-slate-500">Buy Trigger</span><br><span class="font-semibold">${fmtNum(g.buy_trigger, 3)}</span></div>
+                <div><span class="text-slate-500">Buy Limit</span><br><span class="font-semibold">${fmtNum(g.buy_limit, 3)}</span></div>
+                <div><span class="text-slate-500">Shares</span><br><span class="font-semibold">${g.shares}</span></div>
+                <div><span class="text-slate-500">Target Sell</span><br><span class="font-semibold text-emerald-700">${fmtNum(g.target_sell, 3)}</span></div>
+                <div><span class="text-slate-500">Stop Loss</span><br><span class="font-semibold text-rose-700">${fmtNum(g.stop_loss, 3)} (${fmtAED(g.risk_if_stop_hit)} risk)</span></div>
+                <div><span class="text-slate-500">Risk % of 5000</span><br><span class="font-semibold text-rose-700">${fmtNum(g.risk_if_stop_hit_pct, 2)}%</span></div>
+              </div>
+              <div class="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white text-xs">
+                <div class="grid grid-cols-2 border-b border-slate-100 p-2">
+                  <span class="text-slate-600">Stock Value</span>
+                  <span class="text-right font-semibold">${fmtAED(g.invested_in_stock)}</span>
+                </div>
+                <div class="grid grid-cols-2 border-b border-slate-100 p-2">
+                  <span class="text-slate-600">Buy Fee</span>
+                  <span class="text-right font-semibold">${fmtAED(g.buy_fee)}</span>
+                </div>
+                <div class="grid grid-cols-2 border-b border-slate-100 p-2">
+                  <span class="text-slate-600">Total Outlay</span>
+                  <span class="text-right font-semibold">${fmtAED(g.total_cash_out)}</span>
+                </div>
+                <div class="grid grid-cols-2 border-b border-slate-100 p-2">
+                  <span class="text-slate-600">Sell Fee @ Target</span>
+                  <span class="text-right font-semibold">${fmtAED(g.sell_fee_at_target)}</span>
+                </div>
+                <div class="grid grid-cols-2 p-2">
+                  <span class="text-slate-600">Net Profit @ Target</span>
+                  <span class="text-right font-semibold text-emerald-700">${fmtAED(g.net_profit)} (${fmtNum(g.net_profit_pct, 2)}%)</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderMeta(meta) {
+      metaRow.innerHTML = `
+        <div class="rounded-lg bg-white/70 p-2">Investment: <strong>${fmtAED(meta.investment_aed)}</strong></div>
+        <div class="rounded-lg bg-white/70 p-2">Net Target: <strong>${fmtNum(meta.net_target_return_pct, 2)}%</strong></div>
+        <div class="rounded-lg bg-white/70 p-2">Fee / Side: <strong>${fmtNum(meta.effective_fee_per_side_pct, 4)}%</strong></div>
+        <div class="rounded-lg bg-white/70 p-2">Target Multiplier: <strong>${fmtNum(meta.target_price_multiplier, 6)}</strong></div>
+      `;
+    }
+
+    async function loadSignals() {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "Refreshing...";
+      loadingIndicator.classList.remove("hidden");
+      loadingIndicator.classList.add("flex");
+      showStatus("Fetching latest market data from Yahoo Finance...");
+      try {
+        const res = await fetch("/api/signals", { cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) {
+          throw new Error(json.error || `API error ${res.status}`);
+        }
+
+        renderCards(dfmList, json.data.dfm || []);
+        renderCards(adxList, json.data.adx || []);
+        renderMeta(json.meta);
+
+        const stamp = new Date(json.meta.timestamp_utc);
+        lastUpdated.textContent = `Last updated: ${stamp.toLocaleString("en-AE", { hour12: false })}`;
+        hideStatus();
+      } catch (err) {
+        showStatus(`Failed to load data: ${err.message}`, true);
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Refresh Data";
+        loadingIndicator.classList.remove("flex");
+        loadingIndicator.classList.add("hidden");
+      }
+    }
+
+    refreshBtn.addEventListener("click", loadSignals);
+    loadSignals();
+  </script>
+</body>
+</html>
