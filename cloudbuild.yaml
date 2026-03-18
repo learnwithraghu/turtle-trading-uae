@@ -33,3 +33,6 @@ steps:
 
 images:
 - asia-south1-docker.pkg.dev/$PROJECT_ID/turtle-trading-uae/app:$COMMIT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
