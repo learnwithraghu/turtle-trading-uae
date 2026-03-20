@@ -1,124 +1,106 @@
-# Turtle Trading UAE Dashboard
+# UAE Turtle Trader 🐢
 
-Flask app that scans selected DFM and ADX stocks for Turtle System 1 breakout candidates and generates fee-adjusted GTT levels for a 5,000 AED position size.
+Scrapes official DFM and ADX price pages, applies Turtle Trading breakout logic,
+and outputs a curated list of 7 stocks with exact GTT order parameters (trigger,
+target, stop) net of ENBD Securities commissions.
 
-## What It Does
+Run every evening after market close (Sun–Thu, after 3 PM UAE time).
 
-- Pulls end-of-day OHLC data from Yahoo Finance (`yfinance`) for the UAE stock universe.
-- Computes:
-  - 20-day high / low
-  - ATR14
-  - Signal score: `(close - 20d_low) / (20d_high - 20d_low) * 100`
-- Labels candidates as:
-  - `BREAKOUT` (close at/above 20-day high)
-  - `PRE-BREAKOUT` (score >= 80)
-  - `WATCH`
-- Renders top 5 candidates each for DFM and ADX.
-- Builds GTT-ready position levels with Emirates NBD fee assumptions.
+---
 
-## Fee + Target Assumptions
+## Running in GitHub Codespace (Docker only)
 
-- Investment per trade: `5000 AED`
-- Fee per side: `0.1575%` (`0.15% + 5% VAT`)
-- Net profit target: `3.14%`
-- Target price multiplier: `1.034654`
+### 1. Open in Codespace
+
+Click **Code → Codespaces → Create codespace on main**.
+The devcontainer will build automatically and `docker compose build` will run.
+
+### 2. Run the scanner
+
+```bash
+docker compose up
+```
+
+### 3. View the report
+
+After the scan finishes, open `output/report.html` in the Codespace file explorer
+and right-click → **Open with Live Server** (or download it to your local machine).
+
+### Run with custom flags
+
+```bash
+# Turtle System 2 (55-day channel)
+docker compose run --rm scanner python scan.py --system 55
+
+# Override trade size
+docker compose run --rm scanner python scan.py --trade 10000
+
+# Show browser window (requires a display — not available in Codespace)
+# python scan.py --debug
+```
+
+---
+
+## Configuration
+
+Edit `config.toml` before rebuilding. Key settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `trade_size_aed` | 5000 | Capital per trade (AED) |
+| `profit_target_aed` | 150 | Net P&L target after commissions |
+| `turtle_system` | 20 | 20 = System 1, 55 = System 2 |
+| `min_volume_aed` | 500000 | Minimum daily traded value filter |
+| `dfm_picks` | 4 | DFM stocks in the top-7 |
+| `adx_picks` | 3 | ADX stocks in the top-7 |
+
+After editing `config.toml`, no rebuild needed — it is bind-mounted read-only.
+
+---
 
 ## Project Structure
 
 ```
-turtle-trading-uae/
-├── app.py
-├── calculator.py
-├── stocks.py
-├── templates/
-│   └── index.html
+.
+├── .devcontainer/
+│   └── devcontainer.json    ← Codespace config (Docker-in-Docker)
+├── config.toml              ← user settings (edit this)
 ├── requirements.txt
-├── Dockerfile
-└── cloudbuild.yaml
+├── Dockerfile               ← multi-stage; installs Playwright + Chromium
+├── docker-compose.yml       ← mounts data/ and output/ as volumes
+├── scan.py                  ← main entry point
+├── scraper/
+│   ├── dfm.py               ← DFM historical data (Playwright)
+│   └── adx.py               ← ADX equities (Playwright + YF warmup)
+├── turtle/
+│   ├── commission.py        ← ENBD Securities fee calculator
+│   └── signals.py           ← 20/55-day channel breakout logic
+├── output/
+│   ├── renderer.py          ← HTML report builder
+│   └── report.html          ← generated each run (git-ignored)
+└── data/history/            ← per-stock OHLCV cache, grows daily (git-ignored)
 ```
 
-## Run Locally
+---
 
-### Option A (Recommended): uv
+## Commission Schedule (ENBD Securities)
 
-1. Install uv (if not already installed).
+| Exchange | Rate (per side) | Flat fee |
+|----------|----------------|----------|
+| DFM      | 0.28625%       | AED 10.50 |
+| ADX      | 0.15750%       | — |
 
-macOS / Linux:
+On an AED 5,000 trade: DFM round-trip ≈ AED 38 · ADX round-trip ≈ AED 16
 
-```bash
-command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+---
 
-Windows (PowerShell):
+## Historical Data Strategy
 
-```powershell
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { irm https://astral.sh/uv/install.ps1 | iex }
-```
+| Run | DFM | ADX |
+|-----|-----|-----|
+| Day 1 | Playwright scrapes 90-day history from dfm.ae | ADX current prices + Yahoo Finance warmup |
+| Day 2+ | Playwright scrapes incrementally, appends to cache | ADX page row appended to cache |
+| After 20 days | 100% official for System 1 | 100% official for System 1 |
+| After 55 days | 100% official for System 2 | 100% official for System 2 |
 
-2. Create and activate the virtual environment.
-
-macOS / Linux:
-
-```bash
-uv python install 3.11
-uv venv --python 3.11 .venv
-source .venv/bin/activate
-```
-
-Windows (PowerShell):
-
-```powershell
-uv python install 3.11
-uv venv --python 3.11 .venv
-.venv\Scripts\Activate.ps1
-```
-
-3. Install dependencies and run the app.
-
-```bash
-uv pip install -r requirements.txt
-python app.py
-```
-
-### Option B: Standard Python venv
-
-macOS / Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-Windows (PowerShell):
-
-```powershell
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py
-```
-
-Open `http://localhost:5000`.
-
-## API
-
-- `GET /` - dashboard page
-- `GET /api/signals` - returns:
-	- `meta` with strategy and fee constants
-	- `data.dfm` and `data.adx` arrays with signal + GTT fields
-
-## Deploy to Cloud Run
-
-Configured through `cloudbuild.yaml`:
-
-- Build container image
-- Push to Artifact Registry
-- Deploy to Cloud Run service `turtle-trading-uae` in `asia-south1`
-
-Build submit:
-
-```bash
-gcloud builds submit --project data-engineer-423808
-```
+Cache files: `data/history/{EXCHANGE}_{TICKER}.json` — persisted via Docker volume.

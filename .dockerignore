@@ -1,0 +1,7 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+data/history/*.json
+output/report.html
+.env

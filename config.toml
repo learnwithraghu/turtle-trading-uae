@@ -1,0 +1,17 @@
+[trading]
+trade_size_aed    = 5000      # capital per trade (AED)
+profit_target_aed = 150       # net profit target after ALL commissions (AED)
+turtle_system     = 20        # 20 = System 1, 55 = System 2
+min_volume_aed    = 500000    # minimum daily traded value filter (AED)
+max_picks         = 7         # total curated picks to output
+dfm_picks         = 4         # how many of the 7 to target from DFM
+adx_picks         = 3         # how many of the 7 to target from ADX
+
+[browser]
+headless          = true      # set false to watch the browser while debugging
+timeout_ms        = 30000     # page load timeout in milliseconds
+
+[output]
+auto_open_report  = false     # disabled in Docker/Codespace — open output/report.html manually
+report_path       = "output/report.html"
+history_path      = "data/history"
